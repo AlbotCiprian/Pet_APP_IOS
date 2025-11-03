@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: flagforge
+      POSTGRES_PASSWORD: flagforge
+      POSTGRES_DB: flagforge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flagforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      MIGRATIONS_DIR: /app/migrations
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/migrations:/app/migrations:ro
+    command: ["/app/bin/api"]
+
+  worker:
+    build: ./worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file: .env
+    ports:
+      - "8090:8090"
+
+  dashboard:
+    build: ./dashboard
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://api:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+    command: ["npm", "run", "start"]
+
+volumes:
+  pgdata:
